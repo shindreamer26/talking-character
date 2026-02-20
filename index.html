@@ -1,13 +1,493 @@
-￼
-ここにセリフが表示されるよ！
-🔊
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#fce4ec">
+  <title>キャラアプリ</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-速度
+    :root {
+      --accent:  #ff6b9d;
+      --accent2: #b57bee;
+      --bg-from: #ffd6e7;
+      --bg-to:   #ddd6fe;
+      --bubble:  #ffffff;
+      --text:    #333333;
+      --muted:   #aaaaaa;
+    }
 
-1.0
-高さ
+    html { height: 100%; }
 
-1.2
+    body {
+      height: 100dvh;          /* dynamic viewport height — keyboard-aware */
+      display: flex;
+      flex-direction: column;
+      font-family: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Noto Sans JP',
+                   'YuGothic', sans-serif;
+      background: linear-gradient(155deg, var(--bg-from) 0%, var(--bg-to) 100%);
+      overflow: hidden;
+      max-width: 480px;
+      margin: 0 auto;
+    }
 
-送信
-✨ ランダム台詞
+    /* ── LINE notice ──────────────────────────────────────────── */
+    #line-notice {
+      display: none;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 14px;
+      background: #fffde7;
+      border-bottom: 2px solid #06c755;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #444;
+      position: relative;
+      z-index: 10;
+    }
+    #line-notice .icon { font-size: 20px; flex-shrink: 0; padding-top: 1px; }
+    #line-notice .msg  { flex: 1; }
+    #line-notice .msg b { color: #06c755; }
+    #line-notice button {
+      background: none; border: none; font-size: 18px;
+      color: #bbb; cursor: pointer; flex-shrink: 0; line-height: 1;
+    }
+
+    /* ── Character area ───────────────────────────────────────── */
+    #char-area {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 12px 24px 0;
+    }
+
+    #char-img {
+      max-height: 100%;
+      max-width: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 20px rgba(0,0,0,.15));
+      animation: floatAnim 4s ease-in-out infinite;
+    }
+
+    @keyframes floatAnim {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-8px); }
+    }
+
+    #char-fallback {
+      display: none;
+      font-size: 110px;
+      line-height: 1;
+      animation: floatAnim 4s ease-in-out infinite;
+      filter: drop-shadow(0 10px 20px rgba(0,0,0,.1));
+    }
+
+    /* ── Speech bubble ────────────────────────────────────────── */
+    #bubble-wrap {
+      padding: 14px 20px 8px;
+    }
+
+    #bubble {
+      background: var(--bubble);
+      border-radius: 22px;
+      padding: 14px 18px;
+      min-height: 64px;
+      font-size: 16px;
+      line-height: 1.65;
+      color: var(--text);
+      box-shadow: 0 6px 20px rgba(0,0,0,.10);
+      position: relative;
+      word-break: break-all;
+    }
+
+    /* Tail pointing up toward character */
+    #bubble::before {
+      content: '';
+      position: absolute;
+      top: -9px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 10px solid transparent;
+      border-bottom-color: var(--bubble);
+      border-top-width: 0;
+    }
+
+    #bubble .placeholder { color: var(--muted); font-size: 14px; }
+
+    /* Speaking pulse dot */
+    #speaking-dot {
+      display: none;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      vertical-align: middle;
+      margin-right: 8px;
+      animation: pulseAnim .7s ease-in-out infinite alternate;
+    }
+    #speaking-dot.active { display: inline-block; }
+
+    @keyframes pulseAnim {
+      from { opacity: 1; transform: scale(1);   }
+      to   { opacity: .3; transform: scale(.65); }
+    }
+
+    /* Bubble pop animation */
+    @keyframes bubblePop {
+      0%   { transform: scale(.96); opacity: .6; }
+      60%  { transform: scale(1.02); }
+      100% { transform: scale(1);   opacity: 1; }
+    }
+    #bubble.pop { animation: bubblePop .3s ease forwards; }
+
+    /* ── Bottom controls ──────────────────────────────────────── */
+    #controls {
+      background: rgba(255,255,255,.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid rgba(255,255,255,.7);
+      padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    /* Voice settings row */
+    #voice-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Toggle */
+    .toggle-wrap { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .toggle-wrap .lbl { font-size: 18px; line-height: 1; }
+
+    .toggle-switch {
+      position: relative; width: 42px; height: 24px; flex-shrink: 0;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .ts-track {
+      position: absolute; inset: 0;
+      background: #ccc; border-radius: 24px;
+      cursor: pointer; transition: background .25s;
+    }
+    .ts-track::after {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .25s;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2);
+    }
+    .toggle-switch input:checked + .ts-track { background: var(--accent); }
+    .toggle-switch input:checked + .ts-track::after { transform: translateX(18px); }
+
+    /* Slider rows */
+    .slider-row {
+      display: flex; align-items: center; gap: 6px; flex: 1;
+    }
+    .slider-row .lbl { font-size: 12px; color: #777; white-space: nowrap; }
+    .slider-row .val { font-size: 12px; color: #888; width: 28px; text-align: right; flex-shrink: 0; }
+
+    input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      height: 4px;
+      border-radius: 4px;
+      background: #e0e0e0;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 2px 8px rgba(255,107,157,.4);
+      cursor: pointer;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 20px; height: 20px;
+      border: none; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 2px 8px rgba(255,107,157,.4);
+      cursor: pointer;
+    }
+
+    /* Input row */
+    #input-row { display: flex; gap: 8px; }
+
+    #text-input {
+      flex: 1;
+      padding: 11px 16px;
+      border: 2px solid #f5c6de;
+      border-radius: 26px;
+      font-size: 15px;
+      font-family: inherit;
+      background: #fff;
+      color: var(--text);
+      outline: none;
+      transition: border-color .2s;
+      -webkit-appearance: none;
+    }
+    #text-input:focus { border-color: var(--accent); }
+    #text-input::placeholder { color: #ccc; }
+
+    /* Buttons */
+    .btn {
+      border: none; border-radius: 26px;
+      font-family: inherit; font-weight: 700;
+      cursor: pointer; transition: transform .12s, box-shadow .12s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .btn:active { transform: scale(.94); }
+
+    #send-btn {
+      padding: 11px 18px;
+      font-size: 14px;
+      background: linear-gradient(135deg, var(--accent), #ff8cb8);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(255,107,157,.38);
+      white-space: nowrap;
+    }
+
+    #random-btn {
+      width: 100%;
+      padding: 12px;
+      font-size: 15px;
+      background: linear-gradient(135deg, var(--accent2), #818cf8);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(181,123,238,.35);
+    }
+  </style>
+</head>
+<body>
+
+<!-- LINE in-app browser notice -->
+<div id="line-notice">
+  <span class="icon">⚠️</span>
+  <span class="msg">
+    LINEブラウザでは音声読み上げが動作しない場合があります。<br>
+    右上メニュー →「<b>他のブラウザで開く</b>」（Safari / Chrome）でお試しください。
+  </span>
+  <button onclick="this.parentElement.style.display='none'" aria-label="閉じる">✕</button>
+</div>
+
+<!-- Character -->
+<div id="char-area">
+  <img id="char-img" src="character.png" alt="キャラクター"
+       onerror="this.style.display='none';document.getElementById('char-fallback').style.display='block'">
+  <div id="char-fallback">🌸</div>
+</div>
+
+<!-- Speech bubble -->
+<div id="bubble-wrap">
+  <div id="bubble">
+    <span id="speaking-dot"></span><!--
+    --><span id="bubble-text" class="placeholder">ここにセリフが表示されるよ！</span>
+  </div>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+
+  <!-- Voice toggle + sliders -->
+  <div id="voice-row">
+    <div class="toggle-wrap">
+      <span class="lbl">🔊</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="speech-toggle" checked>
+        <span class="ts-track"></span>
+      </label>
+    </div>
+    <div class="slider-row">
+      <span class="lbl">速度</span>
+      <input type="range" id="rate-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+      <span class="val" id="rate-val">1.0</span>
+    </div>
+    <div class="slider-row">
+      <span class="lbl">高さ</span>
+      <input type="range" id="pitch-slider" min="0.5" max="2.0" step="0.1" value="1.2">
+      <span class="val" id="pitch-val">1.2</span>
+    </div>
+  </div>
+
+  <!-- Text input -->
+  <div id="input-row">
+    <input type="text" id="text-input"
+           placeholder="話しかけてみて！"
+           maxlength="200"
+           enterkeyhint="send">
+    <button class="btn" id="send-btn">送信</button>
+  </div>
+
+  <!-- Random phrase -->
+  <button class="btn" id="random-btn">✨ ランダム台詞</button>
+
+</div>
+
+<script>
+'use strict';
+
+/* ─── Random phrases ─────────────────────────────────────── */
+const PHRASES = [
+  'こんにちは！今日も会えて嬉しいな～！',
+  'ねえねえ、私のことずっと見ててよね？',
+  'えへへ、呼んでくれてありがとう！',
+  '今日はどんな一日だった？聞かせてほしいな。',
+  'ちょっと疲れてない？無理しないでね。',
+  'あなたといると、なんだかほっとするよ。',
+  '頑張ってるの、ちゃんと知ってるよ！',
+  'また会えた！やったー！',
+  '何かあったらいつでも話しかけてね！',
+  'うわー！それすごい！もっと教えて！',
+  'いっしょにいると時間があっという間だよ。',
+  'あのね…内緒の話があるんだけど、聞いてくれる？',
+  'ちゃんとごはん食べた？体が一番大事だよ？',
+  'おやすみ前にひとこと言いたかったの。大好き！',
+  'ふふ、今日もかわいいね。',
+];
+
+/* ─── LINE browser detection ────────────────────────────── */
+if (/Line/i.test(navigator.userAgent)) {
+  document.getElementById('line-notice').style.display = 'flex';
+}
+
+/* ─── Speech synthesis ───────────────────────────────────── */
+const synth  = window.speechSynthesis;
+let   voices = [];
+let   speechEnabled = true;
+let   audioUnlocked = false;
+
+/** Load / refresh available voices. */
+function loadVoices() {
+  const v = synth.getVoices();
+  if (v.length) voices = v;
+}
+loadVoices();
+synth.onvoiceschanged = loadVoices;
+
+/** Pick best Japanese voice available. */
+function getJaVoice() {
+  if (!voices.length) loadVoices();
+  return (
+    voices.find(v => v.lang === 'ja-JP' && v.localService) ||
+    voices.find(v => v.lang === 'ja-JP')                   ||
+    voices.find(v => v.lang.startsWith('ja'))              ||
+    voices[0] || null
+  );
+}
+
+/**
+ * iOS requires the first call to speechSynthesis.speak()
+ * to happen synchronously inside a user-gesture handler.
+ * We speak a silent empty utterance to "unlock" audio.
+ */
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  const u = new SpeechSynthesisUtterance('');
+  u.volume = 0;
+  u.lang = 'ja-JP';
+  synth.speak(u);
+}
+document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+document.addEventListener('mousedown',  unlockAudio, { once: true });
+
+/* ─── Bubble UI ──────────────────────────────────────────── */
+const bubbleText = document.getElementById('bubble-text');
+const bubbleEl   = document.getElementById('bubble');
+const dot        = document.getElementById('speaking-dot');
+let   isDefault  = true;
+
+function showInBubble(text) {
+  if (isDefault) {
+    bubbleText.classList.remove('placeholder');
+    isDefault = false;
+  }
+  bubbleText.textContent = text;
+
+  // Pop animation (restart by removing then re-adding class)
+  bubbleEl.classList.remove('pop');
+  void bubbleEl.offsetWidth;
+  bubbleEl.classList.add('pop');
+}
+
+/* ─── Speak ──────────────────────────────────────────────── */
+function speak(text) {
+  if (!speechEnabled || !text.trim()) return;
+  synth.cancel();
+
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang  = 'ja-JP';
+  u.rate  = parseFloat(document.getElementById('rate-slider').value);
+  u.pitch = parseFloat(document.getElementById('pitch-slider').value);
+  const voice = getJaVoice();
+  if (voice) u.voice = voice;
+
+  dot.classList.add('active');
+  u.onend   = () => dot.classList.remove('active');
+  u.onerror = () => dot.classList.remove('active');
+
+  synth.speak(u);
+}
+
+/* ─── Action: send text ──────────────────────────────────── */
+function handleSend() {
+  unlockAudio();
+  const input = document.getElementById('text-input');
+  const text  = input.value.trim();
+  if (!text) return;
+  showInBubble(text);
+  speak(text);
+  input.value = '';
+  input.blur();   // dismiss keyboard on mobile
+}
+
+/* ─── Action: random phrase ──────────────────────────────── */
+function handleRandom() {
+  unlockAudio();
+  const text = PHRASES[Math.floor(Math.random() * PHRASES.length)];
+  showInBubble(text);
+  speak(text);
+}
+
+/* ─── Event listeners ────────────────────────────────────── */
+document.getElementById('send-btn') .addEventListener('click', handleSend);
+document.getElementById('random-btn').addEventListener('click', handleRandom);
+
+document.getElementById('text-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') handleSend();
+});
+
+document.getElementById('speech-toggle').addEventListener('change', e => {
+  speechEnabled = e.target.checked;
+  if (!speechEnabled) { synth.cancel(); dot.classList.remove('active'); }
+});
+
+/* ─── Sliders: display value + filled-track tint ────────── */
+function initSlider(sliderId, valId) {
+  const sl  = document.getElementById(sliderId);
+  const val = document.getElementById(valId);
+
+  function refresh() {
+    const pct = ((sl.value - sl.min) / (sl.max - sl.min)) * 100;
+    sl.style.background =
+      `linear-gradient(to right, var(--accent) ${pct}%, #e0e0e0 ${pct}%)`;
+    val.textContent = parseFloat(sl.value).toFixed(1);
+  }
+  sl.addEventListener('input', refresh);
+  refresh();
+}
+initSlider('rate-slider',  'rate-val');
+initSlider('pitch-slider', 'pitch-val');
+
+</script>
+</body>
+</html>
